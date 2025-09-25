@@ -75,11 +75,4 @@ The analysis was carried out in **SPSS** using a graphical workflow.
 - SPSS (Two-Step Cluster, ANOVA, Chi-Square)  
 - Marketing strategy development based on analytics  
 
----
-
-## Deliverables
-- Full report: `/reports/Report.pdf`  
-- Methodology notes: `/docs/methodology.md`  
-- Sample dataset: `/data/sample.csv`
-
 
