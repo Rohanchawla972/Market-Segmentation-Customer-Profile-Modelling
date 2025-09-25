@@ -73,5 +73,5 @@ This project is licensed under the MIT License.
 ---
 
 ## Author
-Developed by **Rohan Chawla** | Master of Business Analytics | University of Auckland  
+Developed by **Rohan Chawla**
 
