@@ -1,0 +1,550 @@
+---
+title: "clustering_gift"
+format: html
+editor: Rohan Chawla
+---
+
+# importing the data
+
+```{r}
+data<-read.csv("~/Downloads/DMEFExtractSummaryV01.CSV")
+# Print column names with their index number
+for (i in seq_along(colnames(data))) {
+  cat(i, ":", colnames(data)[i], "\n")
+}
+```
+
+#### removing the spring variables
+
+```{r}
+library(dplyr)
+
+# If your ID column name differs, change here:
+id_cols <- c("Cust_ID")
+
+# --- 1) Identify Fall vs Spring columns by name
+fall_cols   <- grep("F\\d{2}", names(data), value = TRUE)   # e.g., IntF07GDollars, CatF05Orders, EmailsF06, etc.
+spring_cols <- grep("S\\d{2}", names(data), value = TRUE)   # e.g., IntS07GDollars, CatS06Orders, EmailsS05, etc.
+
+# --- 2) Create Fall-only dataset (drops all Spring columns)
+data_fall <- data %>%
+  select(all_of(intersect(id_cols, names(data))), all_of(fall_cols))
+
+# --- 3) (Optional) Quick audit so you can see what's kept vs removed
+cat("Fall columns kept:", length(fall_cols), "\n")
+cat("Spring columns removed:", length(spring_cols), "\n\n")
+
+cat("Sample of Fall columns kept:\n")
+print(head(fall_cols, 15))
+
+cat("\nSample of Spring columns removed:\n")
+print(head(spring_cols, 15))
+
+# --- 4) (Optional) Verify: no Spring columns remain
+any_spring_left <- any(grepl("S\\d{2}", names(data_fall)))
+cat("\nAny Spring columns left? ", any_spring_left, "\n")  # should be FALSE
+
+```
+
+#### only keeping the internet and catalogue column
+
+```{r}
+# Step 2: Keep only Internet + Catalog columns, drop Retail
+data_fall_noret <- data_fall %>%
+  select(Cust_ID, starts_with("Int"), starts_with("Cat"))
+
+# Quick audit
+cat("Total columns after removing Retail:", ncol(data_fall_noret), "\n")
+print(names(data_fall_noret)[1:20])   # preview first 20 col names
+
+```
+
+#### Keeping only the Gift related variables
+
+```{r}
+# Step 3 (fixed): Keep ONLY gift dollars + gift recipient counts + new gift recipients
+gift_cols <- grep("(^IntF\\d{2}GDollars$)|(^CatF\\d{2}GDollars$)|(^GiftRec)|(^NewGR)", 
+                  names(data_fall_noret), value = TRUE)
+
+data_gift <- data_fall_noret %>%
+  select(Cust_ID, all_of(gift_cols))
+
+# Quick audit
+cat("Total gift-related columns:", ncol(data_gift), "\n")
+print(names(data_gift))
+
+
+```
+
+#### Adding recipients and new gift recipients
+
+```{r}
+# Add GiftRec + NewGR columns from the original fall dataset
+recip_cols <- grep("(^GiftRec)|(^NewGR)", names(data_fall), value = TRUE)
+
+data_gift <- data_fall %>%
+  select(Cust_ID, all_of(gift_cols), all_of(recip_cols))
+
+# Quick audit
+cat("Final gift dataset columns:", ncol(data_gift), "\n")
+print(names(data_gift))
+
+```
+
+#### Descriptive Stats
+
+```{r}
+library(dplyr)
+
+# 1) Compute total gift revenue per year across Internet + Catalog
+gift_revenue_summary <- data_gift %>%
+  summarise(
+    Gift2004 = sum(IntF04GDollars + CatF04GDollars, na.rm = TRUE),
+    Gift2005 = sum(IntF05GDollars + CatF05GDollars, na.rm = TRUE),
+    Gift2006 = sum(IntF06GDollars + CatF06GDollars, na.rm = TRUE),
+    Gift2007 = sum(IntF07GDollars + CatF07GDollars, na.rm = TRUE)
+  )
+
+# 2) Compute total gift recipients (distinct) per year
+gift_recip_summary <- data_gift %>%
+  summarise(
+    GiftRec2004 = sum(GiftRecF04, na.rm = TRUE),
+    GiftRec2005 = sum(GiftRecF05, na.rm = TRUE),
+    GiftRec2006 = sum(GiftRecF06, na.rm = TRUE),
+    GiftRec2007 = sum(GiftRecF07, na.rm = TRUE)
+  )
+
+# 3) Compute new gift recipients per year
+new_gift_recip_summary <- data_gift %>%
+  summarise(
+    NewGR2004 = sum(NewGRF04, na.rm = TRUE),
+    NewGR2005 = sum(NewGRF05, na.rm = TRUE),
+    NewGR2006 = sum(NewGRF06, na.rm = TRUE),
+    NewGR2007 = sum(NewGRF07, na.rm = TRUE)
+  )
+
+# View results
+gift_revenue_summary
+gift_recip_summary
+new_gift_recip_summary
+
+```
+
+#### **Totals only**(Internet, Catalog, combined, recipients, new recipients)
+
+```{r}
+library(dplyr)
+
+data_gift_customer <- data_gift %>%
+  mutate(
+    # Internet gift revenue totals
+    Int_TotalGift = IntF04GDollars + IntF05GDollars + IntF06GDollars + IntF07GDollars,
+
+    # Catalog gift revenue totals
+    Cat_TotalGift = CatF04GDollars + CatF05GDollars + CatF06GDollars + CatF07GDollars,
+
+    # Total gift spend across both channels
+    All_TotalGift = Int_TotalGift + Cat_TotalGift,
+
+    # Recipients (totals across years)
+    TotalGiftRec = GiftRecF04 + GiftRecF05 + GiftRecF06 + GiftRecF07,
+
+    # New recipients (totals across years)
+    TotalNewGR = NewGRF04 + NewGRF05 + NewGRF06 + NewGRF07
+  ) %>%
+  select(Cust_ID, Int_TotalGift, Cat_TotalGift, All_TotalGift,
+         TotalGiftRec, TotalNewGR)
+
+# Quick check
+glimpse(data_gift_customer)
+
+```
+
+#### adding **Orders + Lines totals** for both Internet and Catalog
+
+```{r}
+library(dplyr)
+
+data_gift_customer <- data %>%
+  mutate(
+    # ---- Internet totals (2004–2007) ----
+    Int_TotalGift   = IntF04GDollars + IntF05GDollars + IntF06GDollars + IntF07GDollars,
+    Int_TotalOrders = IntF04Orders   + IntF05Orders   + IntF06Orders   + IntF07Orders,
+    Int_TotalLines  = IntF04Lines    + IntF05Lines    + IntF06Lines    + IntF07Lines,
+
+    # ---- Catalog totals (2004–2007) ----
+    Cat_TotalGift   = CatF04GDollars + CatF05GDollars + CatF06GDollars + CatF07GDollars,
+    Cat_TotalOrders = CatF04Orders   + CatF05Orders   + CatF06Orders   + CatF07Orders,
+    Cat_TotalLines  = CatF04Lines    + CatF05Lines    + CatF06Lines    + CatF07Lines,
+
+    # ---- Combined spend ----
+    All_TotalGift = Int_TotalGift + Cat_TotalGift,
+
+    # ---- Recipients ----
+    TotalGiftRec = GiftRecF04 + GiftRecF05 + GiftRecF06 + GiftRecF07,
+    TotalNewGR   = NewGRF04   + NewGRF05   + NewGRF06   + NewGRF07
+  ) %>%
+  select(Cust_ID,
+         Int_TotalGift, Int_TotalOrders, Int_TotalLines,
+         Cat_TotalGift, Cat_TotalOrders, Cat_TotalLines,
+         All_TotalGift, TotalGiftRec, TotalNewGR)
+
+# Quick check
+glimpse(data_gift_customer)
+
+```
+
+#### Adding the store distance
+
+```{r}
+library(dplyr)
+
+data_gift_customer <- data %>%
+  mutate(
+    # ---- Internet totals (2004–2007) ----
+    Int_TotalGift   = IntF04GDollars + IntF05GDollars + IntF06GDollars + IntF07GDollars,
+    Int_TotalOrders = IntF04Orders   + IntF05Orders   + IntF06Orders   + IntF07Orders,
+    Int_TotalLines  = IntF04Lines    + IntF05Lines    + IntF06Lines    + IntF07Lines,
+
+    # ---- Catalog totals (2004–2007) ----
+    Cat_TotalGift   = CatF04GDollars + CatF05GDollars + CatF06GDollars + CatF07GDollars,
+    Cat_TotalOrders = CatF04Orders   + CatF05Orders   + CatF06Orders   + CatF07Orders,
+    Cat_TotalLines  = CatF04Lines    + CatF05Lines    + CatF06Lines    + CatF07Lines,
+
+    # ---- Combined gift spend ----
+    All_TotalGift = Int_TotalGift + Cat_TotalGift,
+
+    # ---- Recipients ----
+    TotalGiftRec = GiftRecF04 + GiftRecF05 + GiftRecF06 + GiftRecF07,
+    TotalNewGR   = NewGRF04   + NewGRF05   + NewGRF06   + NewGRF07
+  ) %>%
+  select(Cust_ID,
+         Int_TotalGift, Int_TotalOrders, Int_TotalLines,
+         Cat_TotalGift, Cat_TotalOrders, Cat_TotalLines,
+         All_TotalGift, TotalGiftRec, TotalNewGR,
+         StoreDist)   # ✅ Added store distance here
+
+# Quick check
+glimpse(data_gift_customer)
+
+```
+
+#### Checking the summary
+
+```{r}
+summary(data_gift_customer)
+```
+
+#### Count of gifters and non gifters
+
+```{r}
+library(dplyr)
+
+# Count gifters vs non-gifters
+gift_counts <- data_gift_customer %>%
+  mutate(GifterFlag = ifelse(All_TotalGift > 0, "Gifters", "Non-Gifters")) %>%
+  count(GifterFlag)
+
+print(gift_counts)
+
+# Also show proportion
+gift_counts %>%
+  mutate(Percent = n / sum(n) * 100)
+
+```
+
+#### Filtering only the gifters and scaling
+
+```{r}
+# Filter only gifters
+data_gifters <- data_gift_customer %>%
+  filter(All_TotalGift > 0)
+
+cat("Remaining customers (gifters only):", nrow(data_gifters), "\n")
+
+# Select clustering features (no Cust_ID)
+gift_features <- data_gifters %>%
+  select(Int_TotalGift, Int_TotalOrders, Int_TotalLines,
+         Cat_TotalGift, Cat_TotalOrders, Cat_TotalLines,
+         All_TotalGift, TotalGiftRec, TotalNewGR)
+         #StoreDist)
+
+# Scale the features
+gift_features_scaled <- scale(gift_features)
+
+summary(gift_features_scaled)
+
+```
+
+#### taking 99th percentile to cap outliers, imputing median valuers for store distance and vip flag
+
+```{r}
+library(dplyr)
+
+# --- 1) Identify 99th percentiles for key variables
+caps <- data_gifters %>%
+  summarise(
+    IntGift99   = quantile(Int_TotalGift, 0.99, na.rm = TRUE),
+    CatGift99   = quantile(Cat_TotalGift, 0.99, na.rm = TRUE),
+    IntOrd99    = quantile(Int_TotalOrders, 0.99, na.rm = TRUE),
+    CatOrd99    = quantile(Cat_TotalOrders, 0.99, na.rm = TRUE),
+    IntLines99  = quantile(Int_TotalLines, 0.99, na.rm = TRUE),
+    CatLines99  = quantile(Cat_TotalLines, 0.99, na.rm = TRUE),
+    Rec99       = quantile(TotalGiftRec, 0.99, na.rm = TRUE),
+    NewGR99     = quantile(TotalNewGR, 0.99, na.rm = TRUE)
+  )
+
+print(caps)
+
+# --- 2) Apply capping & create VIP flag
+data_gifters_clean <- data_gifters %>%
+  mutate(
+    VIP_Flag = ifelse(
+      Int_TotalGift   > caps$IntGift99   |
+      Cat_TotalGift   > caps$CatGift99   |
+      Int_TotalOrders > caps$IntOrd99    |
+      Cat_TotalOrders > caps$CatOrd99    |
+      Int_TotalLines  > caps$IntLines99  |
+      Cat_TotalLines  > caps$CatLines99  |
+      TotalGiftRec    > caps$Rec99       |
+      TotalNewGR      > caps$NewGR99,
+      1, 0
+    ),
+    Int_TotalGift   = pmin(Int_TotalGift,   caps$IntGift99),
+    Cat_TotalGift   = pmin(Cat_TotalGift,   caps$CatGift99),
+    Int_TotalOrders = pmin(Int_TotalOrders, caps$IntOrd99),
+    Cat_TotalOrders = pmin(Cat_TotalOrders, caps$CatOrd99),
+    Int_TotalLines  = pmin(Int_TotalLines,  caps$IntLines99),
+    Cat_TotalLines  = pmin(Cat_TotalLines,  caps$CatLines99),
+    TotalGiftRec    = pmin(TotalGiftRec,    caps$Rec99),
+    TotalNewGR      = pmin(TotalNewGR,     caps$NewGR99),
+
+    # --- 3) Impute StoreDist missing with median
+    StoreDist = ifelse(is.na(StoreDist), median(StoreDist, na.rm = TRUE), StoreDist)
+  )
+
+# --- 4) Quick check
+summary(data_gifters_clean)
+table(data_gifters_clean$VIP_Flag)
+
+```
+
+#### Scaling the data again since we capped the data
+
+```{r}
+library(dplyr)
+library(cluster)
+library(ggplot2)
+
+#  1) Feature engineering
+# Note: We drop All_TotalGift because it's Int + Cat (linear combo → hurts distances).
+gift_features_raw <- data_gifters_clean %>%
+  select(
+    Int_TotalGift, Int_TotalOrders, Int_TotalLines,
+    Cat_TotalGift, Cat_TotalOrders, Cat_TotalLines,
+    # All_TotalGift,   # <-- intentionally dropped
+    TotalGiftRec, TotalNewGR
+    # , StoreDist      # <-- UNCOMMENT to include distance in clustering
+  )
+# Log1p to tame skew (safe with zeros)
+gift_features_tx <- gift_features_raw %>%
+  mutate(across(everything(), ~log1p(.)))
+
+# Robust scaling (median/IQR) so outliers don’t dominate
+robust_scale <- function(x) {
+  m <- median(x, na.rm = TRUE)
+  i <- IQR(x, na.rm = TRUE)
+  if (is.na(i) || i == 0) return(x - m)
+  (x - m) / i
+}
+gift_features_scaled <- gift_features_tx %>%
+  mutate(across(everything(), robust_scale)) %>%
+  as.data.frame()
+ cm <- cor(gift_features_tx, use = "pairwise.complete.obs")
+ which(abs(cm) > 0.95 & row(cm) < col(cm), arr.ind = TRUE)
+
+```
+
+#### Clustering
+
+```{r}
+#Model selection: try k = 2…8 (base R, strong nstart) ----------
+set.seed(123)
+k_try <- 2:8
+sil_results <- data.frame(k = k_try, avg_sil = NA_real_)
+
+D <- dist(gift_features_scaled)
+for (kk in k_try) {
+  km <- kmeans(gift_features_scaled, centers = kk, nstart = 200, iter.max = 100)
+  sil <- silhouette(km$cluster, D)
+  sil_results$avg_sil[sil_results$k == kk] <- mean(sil[, 3])
+}
+sil_results
+
+```
+
+#### Trying k4
+
+```{r}
+set.seed(123)
+km4 <- kmeans(gift_features_scaled, centers = 4, nstart = 200)
+
+mean(silhouette(km4$cluster, D)[,3])   # avg silhouette for k=4
+table(km4$cluster)                     # cluster sizes
+
+
+```
+
+#### Profile clusters
+
+```{r}
+cluster_profile4 <- gift_features_raw %>%
+  mutate(Cluster = factor(km4$cluster)) %>%
+  group_by(Cluster) %>%
+  summarise(across(everything(), median, na.rm = TRUE), .groups = "drop")
+
+cluster_profile4
+#adding vip shares
+vip_mix4 <- data_gifters_clean %>%
+  mutate(Cluster = factor(km4$cluster)) %>%
+  group_by(Cluster) %>%
+  summarise(
+    n = n(),
+    VIP_share = mean(VIP_Flag == 1),
+    .groups = "drop"
+  )
+
+vip_mix4
+#PCA Visualisation
+pca <- prcomp(gift_features_scaled)
+plot_data4 <- data.frame(PC1 = pca$x[,1], PC2 = pca$x[,2], Cluster = factor(km4$cluster))
+
+ggplot(plot_data4, aes(PC1, PC2, color = Cluster)) +
+  geom_point(alpha=0.6) +
+  labs(title = "Clusters (k=4) — PCA projection")
+
+```
+
+#### Attaching the clusters to dataset
+
+```{r}
+# --- Attach k=4 clusters to the gifters dataset you clustered on ---
+# Safety: ensure row alignment
+stopifnot(nrow(data_gifters_clean) == length(km4$cluster))
+
+data_gifters_with_clusters <- data_gifters_clean %>%
+  dplyr::mutate(
+    Cluster_num  = as.integer(km4$cluster),     # 1..4 numeric
+    Cluster      = factor(km4$cluster)          # factor for plots/tables
+  )
+
+# Quick sanity checks
+dim(data_gifters_with_clusters)          # should be n_gifters x (original_cols + 2)
+table(data_gifters_with_clusters$Cluster)
+head(data_gifters_with_clusters[, c("Cust_ID", "Cluster_num", "Cluster")])
+
+```
+
+#### Imputing mode and median for values
+
+```{r}
+cluster_profile_clean <- data_gifters_with_clusters %>%
+  group_by(Cluster) %>%
+  summarise(
+    across(
+      where(is.numeric) & !matches("^VIP_Flag$") & !matches("^Cust_ID$"),
+      median, na.rm = TRUE
+    ),
+    VIP_share = mean(VIP_Flag, na.rm = TRUE) * 100,   # percentage
+    .groups = "drop"
+  )
+
+# --- Build data_with_clusters by adding demographics to your clustered data
+library(dplyr)
+
+demo_cols <- c("Cust_ID","HomeValue","LengthRes","StoreDist",
+               "AgeCode","IncCode","OccupCd","HomeCode","Dwelling")
+
+data_with_clusters <- data_gifters_with_clusters %>%
+  left_join(select(data, any_of(demo_cols)), by = "Cust_ID")
+
+cluster_profile_clean
+
+```
+
+#### Checking meaningful demographics columns
+
+```{r}
+library(dplyr)
+# Merge StoreDist.x and StoreDist.y into one clean column
+data_with_clusters <- data_with_clusters %>%
+  mutate(StoreDist = coalesce(StoreDist.x, StoreDist.y)) %>%  # take whichever is not NA
+  select(-StoreDist.x, -StoreDist.y)                          # drop the old ones
+
+# numeric demos
+num_demo <- c("HomeValue", "LengthRes", "StoreDist")
+
+num_demo_by_cluster <- data_with_clusters %>%
+  filter(!is.na(Cluster)) %>%
+  group_by(Cluster) %>%
+  summarise(across(all_of(num_demo), ~median(.x, na.rm = TRUE)),
+            .groups = "drop")
+num_demo_by_cluster
+
+# mode helper
+Mode <- function(x) {
+  x <- x[!is.na(x)]
+  if (!length(x)) return(NA)
+  ux <- unique(x)
+  ux[which.max(tabulate(match(x, ux)))]
+}
+
+# categorical demos
+cat_demo <- c("AgeCode", "IncCode", "OccupCd", "HomeCode", "Dwelling")
+
+cat_demo_by_cluster <- data_with_clusters %>%
+  filter(!is.na(Cluster)) %>%
+  group_by(Cluster) %>%
+  summarise(across(all_of(cat_demo), ~Mode(as.character(.x))),
+            .groups = "drop")
+cat_demo_by_cluster
+
+# combine & keep only variables that actually differ
+library(tidyr)
+
+demo_profile_by_cluster <- num_demo_by_cluster %>%
+  left_join(cat_demo_by_cluster, by = "Cluster")
+
+different_vars <- demo_profile_by_cluster %>%
+  select(-Cluster) %>%
+  summarise(across(everything(), ~dplyr::n_distinct(.))) %>%
+  pivot_longer(everything(), names_to = "variable", values_to = "unique_vals") %>%
+  filter(unique_vals > 1) %>%
+  pull(variable)
+
+demo_profile_diff <- demo_profile_by_cluster %>%
+  select(Cluster, any_of(different_vars))
+
+demo_profile_diff
+
+
+```
+
+#### Demographics of the clusters
+
+```{r}
+# Find columns that vary across clusters
+different_vars <- demo_profile_by_cluster %>%
+  select(-Cluster) %>%
+  summarise(across(everything(), ~n_distinct(.))) %>%
+  pivot_longer(everything(), names_to = "variable", values_to = "unique_vals") %>%
+  filter(unique_vals > 1) %>%
+  pull(variable)
+
+# Filter profile table to only those differentiating variables
+demo_profile_diff <- demo_profile_by_cluster %>%
+  select(Cluster, all_of(different_vars))
+
+demo_profile_diff
+
+```
