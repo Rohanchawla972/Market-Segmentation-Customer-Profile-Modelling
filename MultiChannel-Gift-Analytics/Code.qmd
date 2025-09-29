@@ -222,7 +222,7 @@ data_gift_customer <- data %>%
          Int_TotalGift, Int_TotalOrders, Int_TotalLines,
          Cat_TotalGift, Cat_TotalOrders, Cat_TotalLines,
          All_TotalGift, TotalGiftRec, TotalNewGR,
-         StoreDist)   # ✅ Added store distance here
+         StoreDist)   #  Added store distance 
 
 # Quick check
 glimpse(data_gift_customer)
