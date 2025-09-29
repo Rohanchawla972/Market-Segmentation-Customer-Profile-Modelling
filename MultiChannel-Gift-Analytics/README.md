@@ -1,4 +1,4 @@
-# MultiChannel-Gift-Analytics 
+# MultiChannel-Gift-Analysis
 
 Customer analytics project for a multichannel gift retailer using the **DMEF dataset (2001–2007)**.  
 The project applies advanced statistical and machine learning techniques to analyze **channel loyalty, trade area impact, customer segmentation, and seasonal purchasing trends** across Internet and Catalog channels.  
